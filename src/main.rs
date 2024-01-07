@@ -27,7 +27,8 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), Box<dyn Error>> {
     .trim()
     .to_string()
     .split(',')
-    .map(|x| x.to_ascii_lowercase().to_string())
+    .map(|x| x.to_ascii_lowercase().trim().to_string())
+    .filter(|x|x!="")
     .collect();
 
 
@@ -76,7 +77,7 @@ async fn process_replays(
         let res: ReplayResponse = res.json().await?;
         
         for (username, mut player_placements) in res.player_logs {
-            if !filtered.contains(&username.to_ascii_lowercase()) {
+            if filtered.len()!=0 && !filtered.contains(&username.to_ascii_lowercase()) {
                 continue;
             }
             match placement_stats.entry(username) {
