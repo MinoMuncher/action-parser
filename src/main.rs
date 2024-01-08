@@ -12,7 +12,6 @@ use placement_stats::CumulativePlacementStats;
 use player_stats::PlayerStats;
 use replay_response::ReplayResponse;
 
-use reqwest::Client;
 use std::collections::HashMap;
 use std::error::Error;
 
@@ -65,16 +64,10 @@ async fn process_replays(
     replays: Vec<String>,
     filtered: Vec<String>,
 ) -> Result<String, Box<dyn Error>> {
-    let client: Client = Client::new();
     let mut placement_stats = HashMap::new();
     for replay in replays {
-        let res = client
-            .post("http://localhost:8080")
-            .body(replay)
-            .send()
-            .await?;
 
-        let res: ReplayResponse = res.json().await?;
+        let res: ReplayResponse = serde_json::from_str(&replay)?;
         
         for (username, mut player_placements) in res.player_logs {
             if filtered.len()!=0 && !filtered.contains(&username.to_ascii_lowercase()) {

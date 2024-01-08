@@ -58,6 +58,8 @@ pub struct PlayerStats{
 
     pub pps_variance: f64,
 
+    pub blockfish_score: f64,
+
 
 
 }
@@ -132,7 +134,8 @@ impl From<&CumulativePlacementStats> for PlayerStats{
             average_defence_potential: stats.defense_potentials.iter().sum::<usize>() as f64 / blocks,
             btb_chain_app: true_btb_chain_attack/true_btb_chain_blocks,
             combo_chain_app: true_combo_chain_attack/true_combo_chain_blocks,
-            pps_variance: (stats.delays.iter().map(|delay|(delay-frame_average).powi(2)).sum::<f64>()/stats.delays.len() as f64).sqrt()/frame_average
+            pps_variance: (stats.delays.iter().map(|delay|(delay-frame_average).powi(2)).sum::<f64>()/stats.delays.len() as f64).sqrt()/frame_average,
+            blockfish_score: stats.blockfish_scores.iter().sum::<usize>() as f64 / stats.blockfish_scores.len() as f64,
         }
     }
 }
