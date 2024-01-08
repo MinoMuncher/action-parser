@@ -32,6 +32,8 @@ pub struct PlayerStats{
     pub midgame_apm: f64,
 
     pub pps: f64,
+    pub opener_pps: f64,
+    pub midgame_pps: f64,
     pub btb_wellshifts: usize,
 
     pub btb_chain_efficiency: f64,
@@ -115,6 +117,8 @@ impl From<&CumulativePlacementStats> for PlayerStats{
             apm: stats.attack as f64 * 60.0 / time_secs,
             opener_apm: (stats.opener_attack as f64 / opener_time_secs) * 60.0,
             midgame_apm: ((stats.attack - stats.opener_attack) as f64 / (time_secs-opener_time_secs)) *60.0,
+            opener_pps: stats.opener_blocks as f64 / opener_time_secs,
+            midgame_pps: (blocks - stats.opener_blocks as f64) / (time_secs-opener_time_secs),
             pps: blocks / time_secs,
             btb_wellshifts: wellshifts,
             btb_chain_wellshifts: wellshifts as f64/ true_btb_chains.len() as f64,

@@ -23,21 +23,21 @@ pub struct CumulativePlacementStats{
     pub keypresses: usize,
     pub opener_attack: usize,
     pub opener_frames: f64,
+    pub opener_blocks: usize,
     pub defense_potentials: Vec<usize>,
     pub attack_potentials: Vec<usize>,
     pub blockfish_scores: Vec<usize>
 }
-fn mino_to_color(mino: MinoType)->blockfish::Color{
+fn mino_to_color(mino: MinoType)->Option<blockfish::Color>{
     match mino{
-        MinoType::Z => blockfish::Color::try_from('Z').unwrap(),
-        MinoType::L => blockfish::Color::try_from('L').unwrap(),
-        MinoType::O => blockfish::Color::try_from('O').unwrap(),
-        MinoType::S => blockfish::Color::try_from('S').unwrap(),
-        MinoType::I => blockfish::Color::try_from('I').unwrap(),
-        MinoType::J => blockfish::Color::try_from('J').unwrap(),
-        MinoType::T => blockfish::Color::try_from('T').unwrap(),
-        MinoType::Garbage => blockfish::Color::try_from('G').unwrap(),
-        MinoType::Empty => blockfish::Color::try_from(' ').unwrap(),
+        MinoType::Z => blockfish::Color::try_from('Z').ok(),
+        MinoType::L => blockfish::Color::try_from('L').ok(),
+        MinoType::O => blockfish::Color::try_from('O').ok(),
+        MinoType::S => blockfish::Color::try_from('S').ok(),
+        MinoType::I => blockfish::Color::try_from('I').ok(),
+        MinoType::J => blockfish::Color::try_from('J').ok(),
+        MinoType::T => blockfish::Color::try_from('T').ok(),
+        _=>None
     }
 }
 
@@ -45,7 +45,7 @@ impl From<&PlayerPlacements> for CumulativePlacementStats{
 
     fn from(value: &PlayerPlacements) -> Self {
         let blockfish_config = blockfish::Config{
-            search_limit: 1_000,
+            search_limit: 100,
             parameters: blockfish::Parameters::default(),
         };
         let mut blockfish = blockfish::ai::AI::new(blockfish_config);
@@ -81,13 +81,14 @@ impl From<&PlayerPlacements> for CumulativePlacementStats{
                 stats.attack += attack;
 
                 if !opener_over{
+                    stats.opener_blocks += 1;
                     stats.opener_attack += attack;
                     stats.opener_frames += placement.frame_delay;
                 }
 
                 if placement.garbage_cleared > 0{
                     stats.attack_with_garbage += attack;
-                    stats.exclusive_garbage_cleared += placement.garbage_cleared;
+                    stats.exclusive_garbage_cleared += placement.lines_cleared;
                 }else if placement.lines_cleared > 0{
                     stats.attack_with_stack += attack;
                     stats.exclusive_stack_cleared += placement.lines_cleared
@@ -96,7 +97,7 @@ impl From<&PlayerPlacements> for CumulativePlacementStats{
                 let just_ate_cheese = i != 0 && placement.garbage_cleared > 0 && has_cheese(&game[i-1].board);
                 if just_ate_cheese{
                     stats.attack_with_cheese += attack;
-                    stats.exclusive_cheese_cleared += stats.garbage_cleared;
+                    stats.exclusive_cheese_cleared += placement.lines_cleared;
                 }
 
                 stats.delays.push(placement.frame_delay);
@@ -166,25 +167,20 @@ impl From<&PlayerPlacements> for CumulativePlacementStats{
                 stats.defense_potentials.push(def);
                 stats.attack_potentials.push(atk);
 
-                let mut bf_queue: Vec<_> = placement.queue.iter().map(|&mino|mino_to_color(mino)).collect();
+                let mut bf_queue: Vec<_> = placement.queue.iter().filter_map(|&mino|mino_to_color(mino)).take(5).collect();
                 let bf_hold = bf_queue.remove(0);
                 let mut bf_matrix = blockfish::BasicMatrix::with_cols(10);
-                for y in 0..40{
+                for y in 0..(40-garbage_height){
                     for x in 0..10{
                         if placement.board[x + y * 10] != MinoType::Empty{
-                            bf_matrix.set((x as u16, (39 - y) as u16));
+                            bf_matrix.set(((39 - garbage_height - y) as u16, x as u16));
                         }
                     }
                 }
-                let mut analysis = blockfish.analyze(blockfish::ai::Snapshot { hold: Some(bf_hold), queue: bf_queue, matrix: bf_matrix });
-                analysis.wait();
-                let move_id = analysis
-                .all_moves()
-                .min_by(|&m, &n| analysis.cmp(m, n))
-                .expect("no suggestions");
-                let rating = analysis.suggestion(move_id, 1).rating;
-                if rating > 0{
-                    stats.blockfish_scores.push(rating as usize);
+
+                let analysis = blockfish.analyze_raw(blockfish::ai::Snapshot { hold: Some(bf_hold), queue: bf_queue, matrix: bf_matrix });
+                if analysis > 0{
+                    stats.blockfish_scores.push(analysis as usize);
                 }
             }
         }
