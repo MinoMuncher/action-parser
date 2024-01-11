@@ -62,8 +62,16 @@ pub struct PlayerStats{
 
     pub blockfish_score: f64,
 
+    pub burst_pps: f64,
+    pub attack_delay_rate: f64,
+    pub pre_attack_delay_rate: f64,
 
 
+}
+#[derive(Debug, Clone, Copy)]
+struct Burst{
+    blocks: usize,
+    delay: f64
 }
 
 impl From<&CumulativePlacementStats> for PlayerStats{
@@ -83,7 +91,12 @@ impl From<&CumulativePlacementStats> for PlayerStats{
         let time_secs = time_frames / 60.0;
         let opener_time_secs = stats.opener_frames / 60.0;
 
+        let frame_sd = (stats.delays.iter().map(|delay: &f64|(delay-frame_average).powi(2)).sum::<f64>()/stats.delays.len() as f64).sqrt();
+        let frame_sd = (stats.delays.iter().filter(|&&delay|(delay-frame_average).abs() < frame_sd * 5.0).map(|delay: &f64|(delay-frame_average).powi(2)).sum::<f64>()/stats.delays.len() as f64).sqrt();
+
         let blocks = stats.delays.len() as f64;
+
+        let attack_chains : Vec<_> = stats.combo_segments.iter().filter(|segment|segment.attack>=4).collect();
 
         let true_combo_chains : Vec<_> = stats.combo_segments.iter().filter(|segment|segment.blocks>4).collect();
         let true_combo_chain_blocks = true_combo_chains.iter().map(|seg| seg.blocks).sum::<usize>() as f64;
@@ -99,6 +112,44 @@ impl From<&CumulativePlacementStats> for PlayerStats{
         for clear_type in 0..16{
             clear_types.insert(ClearType::try_from(clear_type).unwrap(), stats.clear_types[clear_type as usize]);
         }
+        let segment_times : Vec<_> = (0..stats.delays.len()-6).map(|start|{
+            let seg: Vec<_> = stats.delays.iter().skip(start).take(7).cloned().collect();
+            let last = *seg.get(seg.len()-1).unwrap_or(&0.0);
+            (last, seg.iter().sum::<f64>())
+        }).collect();
+
+        let segment_average = segment_times.iter().map(|s|s.1).sum::<f64>() / segment_times.len() as f64;
+
+        let segment_sd = (segment_times.iter().map(|(_, delay)|(delay-segment_average).powi(2)).sum::<f64>()/segment_times.len() as f64).sqrt();
+
+        let mut bursts : Vec<Burst> = Vec::new();
+        let mut current_burst = None;
+        for &(last, delay) in segment_times.iter(){
+            if segment_average - delay > segment_sd{
+                match current_burst{
+                    None=>{
+                        current_burst = Some(Burst{
+                            blocks: 7,
+                            delay
+                        });
+                    }
+                    Some(mut burst)=>{
+                        burst.blocks += 1;
+                        burst.delay += last;
+                    }
+                }
+            }else{
+                if let Some(burst) = current_burst{
+                    bursts.push(burst);
+                }
+                current_burst = None;
+            }
+        }
+        if let Some(burst) = current_burst{
+            bursts.push(burst);
+        }
+
+        let prev_attack_chains : Vec<_> = attack_chains.iter().filter_map(|c|c.prev_delay).collect();
 
         Self{
             clear_types,
@@ -138,8 +189,11 @@ impl From<&CumulativePlacementStats> for PlayerStats{
             average_defence_potential: stats.defense_potentials.iter().sum::<usize>() as f64 / blocks,
             btb_chain_app: true_btb_chain_attack/true_btb_chain_blocks,
             combo_chain_app: true_combo_chain_attack/true_combo_chain_blocks,
-            pps_variance: (stats.delays.iter().map(|delay|(delay-frame_average).powi(2)).sum::<f64>()/stats.delays.len() as f64).sqrt()/frame_average,
+            pps_variance: frame_sd/frame_average,
             blockfish_score: stats.blockfish_scores.iter().sum::<usize>() as f64 / stats.blockfish_scores.len() as f64,
+            attack_delay_rate: attack_chains.iter().filter(|segment|segment.initial_delay-frame_average>frame_sd).count() as f64 /(attack_chains.len() as f64),
+            pre_attack_delay_rate: prev_attack_chains.iter().filter(|&&segment|segment-frame_average>frame_sd).count() as f64 /(prev_attack_chains.len() as f64),
+            burst_pps: bursts.iter().map(|burst|burst.blocks).sum::<usize>() as f64 / (bursts.iter().map(|burst|burst.delay).sum::<f64>() / 60.0),
         }
     }
 }

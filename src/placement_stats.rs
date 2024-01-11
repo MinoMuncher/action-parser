@@ -60,7 +60,7 @@ impl From<&PlayerPlacements> for CumulativePlacementStats{
             let mut current_btb = BTBSegment::default();
 
             for (i, placement) in game.iter().enumerate(){
-                if !opener_over && placement.garbage_cleared > 0 && !placement.btb_clear{
+                if !opener_over && placement.garbage_cleared > 0 && ((placement.shape==MinoType::T && !placement.btb_clear) || (placement.shape!=MinoType::T && placement.lines_cleared < 4)){
                     opener_over = true;
                 }
 
@@ -114,10 +114,8 @@ impl From<&PlayerPlacements> for CumulativePlacementStats{
                     current_combo.attack += attack;
                     current_combo.blocks += 1;
                 }else{
-                    if current_combo.blocks > 1{
-                        stats.combo_segments.push(current_combo);
-                    }
-                    current_combo = ComboSegment::new(attack, placement.clear_type.is_multipliable());
+                    stats.combo_segments.push(current_combo);
+                    current_combo = ComboSegment::new(attack, placement.clear_type.is_multipliable(), placement.frame_delay, game.get(i-1).and_then(|p|Some(p.frame_delay)));
                 }
 
                 if placement.clear_type!=ClearType::None && !placement.btb_clear{
@@ -233,15 +231,17 @@ pub struct ComboSegment{
     pub frames:f64,
     pub attack:usize,
     pub blocks: usize,
-    pub multipliers: Vec<usize>
+    pub multipliers: Vec<usize>,
+    pub initial_delay: f64,
+    pub prev_delay: Option<f64>,
 }
 
 impl ComboSegment{
-    fn new(starting_attack: usize, is_multiplier: bool)->Self{
+    fn new(starting_attack: usize, is_multiplier: bool, initial_delay: f64, prev_delay: Option<f64>)->Self{
         let mut multipliers = Vec::new();
         if is_multiplier{
             multipliers.push(0);
         }
-        Self { frames: 0.0, attack: starting_attack, blocks: 1, multipliers }
+        Self { frames: 0.0, attack: starting_attack, blocks: 1, multipliers, initial_delay, prev_delay}
     }
 }
