@@ -112,9 +112,9 @@ impl From<&CumulativePlacementStats> for PlayerStats{
         for clear_type in 0..16{
             clear_types.insert(ClearType::try_from(clear_type).unwrap(), stats.clear_types[clear_type as usize]);
         }
-        let segment_times : Vec<_> = (0..stats.delays.len()-6).map(|start|{
+        let segment_times : Vec<_> = (0..stats.delays.len().saturating_sub(6)).map(|start|{
             let seg: Vec<_> = stats.delays.iter().skip(start).take(7).cloned().collect();
-            let last = *seg.get(seg.len()-1).unwrap_or(&0.0);
+            let last = *seg.last().unwrap_or(&0.0);
             (last, seg.iter().sum::<f64>())
         }).collect();
 
