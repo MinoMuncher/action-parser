@@ -14,4 +14,3 @@ bitris = {path = "../bitris"}
 blockfish = {path = "../blockfish/blockfish-engine"}
 
 serde_json = "1.0.110"
-async-std = "1.12.0"

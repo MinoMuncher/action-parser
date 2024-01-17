@@ -183,7 +183,7 @@ impl From<&CumulativePlacementStats> for PlayerStats{
             combo_chain: true_combo_chains.iter().map(|seg| seg.blocks - 1).sum::<usize>() as f64 / true_combo_chains.len() as f64,
             combo_chain_apm: true_combo_chain_attack / true_combo_chains.iter().map(|seg| seg.frames).sum::<f64>() * 3600.0,
             combo_chain_attack: true_combo_chain_attack / true_combo_chains.len() as f64,
-            max_combo: stats.combo_segments.iter().map(|segment|segment.blocks - 1 ).max().unwrap_or(0),
+            max_combo: stats.combo_segments.iter().map(|segment|segment.blocks.saturating_sub(1) ).max().unwrap_or(0),
             max_combo_attack: stats.combo_segments.iter().map(|segment|segment.attack).max().unwrap_or(0),
             average_spike_potential: stats.attack_potentials.iter().filter(|x|x>=&&&10).count() as f64 / stats.attack_potentials.len() as f64,
             average_defence_potential: stats.defense_potentials.iter().sum::<usize>() as f64 / blocks,

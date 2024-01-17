@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::collections::HashMap;
 
 pub type Board = Vec<MinoType>;
 
@@ -30,7 +29,6 @@ pub struct PlacementStats {
     pub queue: Vec<MinoType>,
 }
 
-pub type PlayerPlacements = Vec<Vec<PlacementStats>>;
 
 #[derive(Hash, Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -145,16 +143,4 @@ impl std::convert::TryFrom<u8> for MinoType{
             _=>Err(OutOfBoundsError(value))
         }
     }
-}
-
-
-#[derive(Debug, Serialize, Deserialize)]
-
-pub struct ReplayResponse {
-    #[serde(rename = "brokenGames")]
-    pub broken_games: usize,
-    #[serde(rename = "totalGames")]
-    pub total_games: usize,
-    #[serde(rename = "playerLogs")]
-    pub player_logs: HashMap<String, PlayerPlacements>,
 }
