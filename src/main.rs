@@ -66,7 +66,8 @@ async fn process_replays(
     let mut player_stats: HashMap<String, CumulativePlacementStats> = HashMap::new();
 
     for replay in replays {
-        let addr = "127.0.0.1:8080".parse()?;
+        let addr: usize = std::env::var("TETRIO_PARSER_PORT").ok().and_then(|s: String| s.parse().ok()).unwrap_or(8080);
+        let addr = format!("127.0.0.1:{}",addr).parse()?;
 
         let socket = TcpSocket::new_v4()?;
         let stream = socket.connect(addr).await?;
@@ -151,7 +152,10 @@ async fn process_replays(
 
 #[tokio::main]
 async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:8081").await.unwrap();
+    let port: usize = std::env::var("ACTION_PARSER_PORT").ok().and_then(|s: String| s.parse().ok()).unwrap_or(8081);
+    let port = format!("127.0.0.1:{}",port);
+    println!("action parser listening on {}", port);
+    let listener = TcpListener::bind(port).await.unwrap();
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
