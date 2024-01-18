@@ -15,6 +15,11 @@ use tokio::{
     task::JoinSet,
 };
 
+
+fn sanitize_string(s: &str)->String{
+    s.trim_start_matches("\u{feff}").trim_end_matches('\n').trim_end_matches('\r').to_string()
+}
+
 use std::{collections::HashMap, error::Error};
 
 use tokio::net::{TcpListener, TcpStream};
@@ -72,13 +77,13 @@ async fn process_replays(
         let socket = TcpSocket::new_v4()?;
         let stream = socket.connect(addr).await?;
         let mut stream = BufReader::new(stream);
-        stream.write_all(replay.trim().as_bytes()).await?;
+        stream.write_all(sanitize_string(&replay).as_bytes()).await?;
         stream.write_all("\n".as_bytes()).await?;
         stream.flush().await?;
 
         let mut supported = String::new();
         stream.read_line(&mut supported).await?;
-        let supported: bool = supported.trim_start_matches("\u{feff}").trim_end_matches('\n').parse()?;
+        let supported: bool = sanitize_string(&supported).parse()?;
 
         if !supported{
             return Ok("unsupported replay version".to_string());
@@ -86,9 +91,7 @@ async fn process_replays(
 
         let mut names = String::new();
         stream.read_line(&mut names).await?;
-        let names: Vec<_> = names
-            .trim_start_matches("\u{feff}")
-            .trim_end_matches('\n')
+        let names: Vec<_> = sanitize_string(&names)
             .split(' ')
             .map(|s| s.to_string())
             .collect();
@@ -104,7 +107,7 @@ async fn process_replays(
 
         let mut num_games = String::new();
         stream.read_line(&mut num_games).await?;
-        let num_games: usize = num_games.trim_start_matches("\u{feff}").trim_end_matches('\n').parse()?;
+        let num_games: usize = sanitize_string(&num_games).parse()?;
 
         stream.write_all(names.len().to_string().as_bytes()).await?;
         stream.write_all("\n".as_bytes()).await?;
