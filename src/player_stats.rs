@@ -103,6 +103,7 @@ impl From<&CumulativePlacementStats> for PlayerStats{
         let true_combo_chain_attack = true_combo_chains.iter().map(|segment|segment.attack).sum::<usize>() as f64;
 
         let true_btb_chains : Vec<_> = stats.btb_segments.iter().filter(|segment|segment.btb>=4).collect();
+
         let wellshifts = true_btb_chains.iter().map(|segment| segment.wellshifts).sum::<usize>();
         let true_btb_chain_blocks = true_btb_chains.iter().map(|seg| seg.blocks).sum::<usize>() as f64;
         let true_btb_chain_attack = true_btb_chains.iter().map(|segment|segment.attack).sum::<usize>() as f64;
@@ -173,19 +174,19 @@ impl From<&CumulativePlacementStats> for PlayerStats{
             pps: blocks / time_secs,
             btb_wellshifts: wellshifts,
             btb_chain_wellshifts: wellshifts as f64/ true_btb_chains.len() as f64,
-            btb_chain_efficiency: true_btb_chains.iter().map(|segment|segment.btb+1).sum::<usize>() as f64 / (tspins as f64 + blocks),
+            btb_chain_efficiency: true_btb_chains.len() as f64 / stats.btb_segments.len() as f64,
             btb_chain: true_btb_chains.iter().map(|segment|segment.btb).sum::<usize>() as f64 / true_btb_chains.len() as f64,
             btb_chain_apm: true_btb_chain_attack / true_btb_chains.iter().map(|seg| seg.frames).sum::<f64>() * 3600.0,
             btb_chain_attack: true_btb_chain_attack / true_btb_chains.len() as f64,
             max_btb: stats.btb_segments.iter().map(|segment|segment.btb).max().unwrap_or(0),
             max_btb_attack: stats.btb_segments.iter().map(|segment|segment.attack).max().unwrap_or(0),
-            combo_chain_efficiency: true_combo_chain_blocks / blocks,
+            combo_chain_efficiency: true_combo_chains.len() as f64 / stats.combo_segments.len() as f64,
             combo_chain: true_combo_chains.iter().map(|seg| seg.blocks - 1).sum::<usize>() as f64 / true_combo_chains.len() as f64,
             combo_chain_apm: true_combo_chain_attack / true_combo_chains.iter().map(|seg| seg.frames).sum::<f64>() * 3600.0,
             combo_chain_attack: true_combo_chain_attack / true_combo_chains.len() as f64,
             max_combo: stats.combo_segments.iter().map(|segment|segment.blocks.saturating_sub(1) ).max().unwrap_or(0),
             max_combo_attack: stats.combo_segments.iter().map(|segment|segment.attack).max().unwrap_or(0),
-            average_spike_potential: stats.attack_potentials.iter().filter(|x|x>=&&&10).count() as f64 / stats.attack_potentials.len() as f64,
+            average_spike_potential: stats.spikable_boards as f64 / stats.pre_spike_boards as f64,
             average_defence_potential: stats.defense_potentials.iter().sum::<usize>() as f64 / blocks,
             btb_chain_app: true_btb_chain_attack/true_btb_chain_blocks,
             combo_chain_app: true_combo_chain_attack/true_combo_chain_blocks,

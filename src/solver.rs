@@ -22,7 +22,7 @@ fn parse_replay_args(
         }
     }
     let mut vec_queue = VecDeque::new();
-    for &p in queue.into_iter().take(6){
+    for &p in queue.into_iter().take(8){
         use Shape::*;
         vec_queue.push_back(match p {
             MinoType::Z => Z,

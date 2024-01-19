@@ -25,15 +25,21 @@ pub struct CumulativePlacementStats {
     pub opener_frames: f64,
     pub opener_blocks: usize,
     pub defense_potentials: Vec<usize>,
-    pub attack_potentials: Vec<usize>,
     pub blockfish_scores: Vec<usize>,
+    pub spikable_boards: usize,
+    pub pre_spike_boards: usize,
 }
 
-
-impl CumulativePlacementStats{
-    pub fn absorb(&mut self, stats: CumulativePlacementStats){
-        self.clear_types.iter_mut().zip(stats.clear_types.iter()).for_each(|(c, s)| *c += s);
-        self.shape_types.iter_mut().zip(stats.shape_types.iter()).for_each(|(c, s)| *c += s);
+impl CumulativePlacementStats {
+    pub fn absorb(&mut self, stats: CumulativePlacementStats) {
+        self.clear_types
+            .iter_mut()
+            .zip(stats.clear_types.iter())
+            .for_each(|(c, s)| *c += s);
+        self.shape_types
+            .iter_mut()
+            .zip(stats.shape_types.iter())
+            .for_each(|(c, s)| *c += s);
         self.garbage_cleared += stats.garbage_cleared;
         self.lines_cleared += stats.lines_cleared;
         self.attack += stats.attack;
@@ -43,25 +49,24 @@ impl CumulativePlacementStats{
         self.exclusive_stack_cleared += stats.exclusive_stack_cleared;
         self.attack_with_cheese += stats.attack_with_cheese;
         self.exclusive_cheese_cleared += stats.exclusive_cheese_cleared;
-        
+
         self.delays.extend(stats.delays);
         self.stack_heights.extend(stats.stack_heights);
         self.garbage_heights.extend(stats.garbage_heights);
         self.btb_segments.extend(stats.btb_segments);
         self.combo_segments.extend(stats.combo_segments);
-        
+
         self.keypresses += stats.keypresses;
         self.opener_attack += stats.opener_attack;
         self.opener_frames += stats.opener_frames;
         self.opener_blocks += stats.opener_blocks;
-        
-        self.defense_potentials.extend(stats.defense_potentials);
-        self.attack_potentials.extend(stats.attack_potentials);
-        self.blockfish_scores.extend(stats.blockfish_scores);
 
+        self.defense_potentials.extend(stats.defense_potentials);
+        self.blockfish_scores.extend(stats.blockfish_scores);
+        self.spikable_boards += stats.spikable_boards;
+        self.pre_spike_boards += stats.pre_spike_boards;
     }
 }
-
 
 impl From<&[PlacementStats]> for CumulativePlacementStats {
     fn from(game: &[PlacementStats]) -> Self {
@@ -76,6 +81,8 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
 
         let mut current_combo = None;
         let mut current_btb = None;
+
+        let mut spike_grace_period = 0;
 
         for (i, placement) in game.iter().enumerate() {
             if !opener_over
@@ -131,51 +138,59 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
             stats.garbage_heights.push(garbage_height);
 
             if placement.lines_cleared > 0 {
-                current_combo = match current_combo{
-                    None=>{
-                        Some(ComboSegment::new(
-                            attack,
-                            placement.clear_type.is_multipliable(),
-                            placement.frame_delay,
-                            if i>0{
-                                game.get(i-1).and_then(|p| Some(p.frame_delay))
-                            }else{None})
-                        )
-                    },
-                    Some(mut current_combo)=>{
+                current_combo = match current_combo {
+                    None => Some(ComboSegment::new(
+                        attack,
+                        placement.clear_type.is_multipliable(),
+                        placement.frame_delay,
+                        if i > 0 {
+                            game.get(i - 1).and_then(|p| Some(p.frame_delay))
+                        } else {
+                            None
+                        },
+                    )),
+                    Some(mut current_combo) => {
                         current_combo.frames += placement.frame_delay;
                         current_combo.attack += attack;
                         current_combo.blocks += 1;
                         Some(current_combo)
                     }
                 }
-
             } else {
-                if let Some(combo) = current_combo{
+                if let Some(combo) = current_combo {
+                    if combo.attack >= 9 {
+                        stats.pre_spike_boards =
+                            stats.pre_spike_boards.saturating_sub(combo.blocks);
+                        spike_grace_period += 14;
+                    }
                     stats.combo_segments.push(combo);
                     current_combo = None;
                 }
             }
 
-            if placement.lines_cleared > 0 && !placement.btb_clear {
-                if let Some(btb) = current_btb{
+            if placement.lines_cleared > 0 && !placement.clear_type.is_btb_clear() {
+                if let Some(btb) = current_btb {
                     stats.btb_segments.push(btb);
                     current_btb = None;
                 }
             } else {
-                current_btb = match current_btb{
-                    None=>{
-                        let mut well = None;
-                        if height > 0 {
-                            well = Some(get_well(&placement.board));
+                current_btb = match current_btb {
+                    None => {
+                        if placement.lines_cleared > 0 {
+                            let mut well = None;
+                            if height > 0 {
+                                well = Some(get_well(&placement.board));
+                            }
+                            Some(BTBSegment::new(attack, placement.shape, well))
+                        } else {
+                            None
                         }
-                        Some(BTBSegment::new(attack, placement.shape, well))
                     }
-                    Some(mut current_btb)=>{
+                    Some(mut current_btb) => {
                         current_btb.frames += placement.frame_delay;
                         current_btb.attack += attack;
-        
-                        if placement.clear_type.is_multipliable() {
+
+                        if placement.clear_type.is_btb_clear() {
                             current_btb.btb += 1;
                         } else {
                             if placement.shape == MinoType::I {
@@ -184,15 +199,15 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                                 current_btb.wasted_t += 1;
                             }
                         }
-        
+
                         if placement.shape == MinoType::I {
                             current_btb.i_placed += 1;
                         } else if placement.shape == MinoType::T {
                             current_btb.t_placed += 1;
                         }
-        
+
                         current_btb.blocks += 1;
-        
+
                         let mut well = None;
                         if height > 0 {
                             well = Some(get_well(&placement.board));
@@ -204,7 +219,6 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                         Some(current_btb)
                     }
                 }
-
             }
 
             let (atk, def) = solve_state(
@@ -214,40 +228,50 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                 &placement.queue,
             );
 
-            stats.defense_potentials.push(def);
-            stats.attack_potentials.push(atk);
-
-            let mut bf_queue: Vec<_> = placement
-                .queue
-                .iter()
-                .filter_map(|&mino| mino_to_color(mino))
-                .take(5)
-                .collect();
-            let bf_hold = bf_queue.remove(0);
-            let mut bf_matrix = blockfish::BasicMatrix::with_cols(10);
-            for y in 0..(40 - garbage_height) {
-                for x in 0..10 {
-                    if placement.board[x + y * 10] != MinoType::Empty {
-                        bf_matrix.set(((39 - garbage_height - y) as u16, x as u16));
+            if atk >= 9 {
+                stats.spikable_boards += 1;
+            } else {
+                let mut bf_queue: Vec<_> = placement
+                    .queue
+                    .iter()
+                    .filter_map(|&mino| mino_to_color(mino))
+                    .take(5)
+                    .collect();
+                let bf_hold = bf_queue.remove(0);
+                let mut bf_matrix = blockfish::BasicMatrix::with_cols(10);
+                for y in 0..(40 - garbage_height) {
+                    for x in 0..10 {
+                        if placement.board[x + y * 10] != MinoType::Empty {
+                            bf_matrix.set(((39 - garbage_height - y) as u16, x as u16));
+                        }
                     }
+                }
+
+                let analysis = blockfish.analyze_raw(blockfish::ai::Snapshot {
+                    hold: Some(bf_hold),
+                    queue: bf_queue,
+                    matrix: bf_matrix,
+                });
+                if analysis > 0 {
+                    stats.blockfish_scores.push(analysis as usize);
                 }
             }
 
-            let analysis = blockfish.analyze_raw(blockfish::ai::Snapshot {
-                hold: Some(bf_hold),
-                queue: bf_queue,
-                matrix: bf_matrix,
-            });
-            if analysis > 0 {
-                stats.blockfish_scores.push(analysis as usize);
+            stats.defense_potentials.push(def);
+
+            if spike_grace_period > 0 {
+                spike_grace_period -= 1;
+            } else {
+                stats.pre_spike_boards += 1;
             }
         }
-        if let Some(current_combo) = current_combo{
+        if let Some(current_combo) = current_combo {
             stats.combo_segments.push(current_combo);
         }
-        if let Some(current_btb) = current_btb{
+        if let Some(current_btb) = current_btb {
             stats.btb_segments.push(current_btb);
         }
+
         stats
     }
 }

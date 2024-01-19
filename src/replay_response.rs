@@ -71,6 +71,9 @@ impl ClearType{
     pub fn is_multipliable(&self)->bool{
         self == &Self::TspinDouble || self == &Self::TspinTriple || self == &Self::Quad
     }
+    pub fn is_btb_clear(&self)->bool{
+        self == &Self::TspinDouble || self == &Self::TspinTriple || self == &Self::Quad ||  self == &Self::TspinSingle || self == &Self::TspinMiniSingle || self == &Self::TspinMiniDouble
+    }
 }
 
 #[derive(Debug)]

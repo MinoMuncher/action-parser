@@ -29,9 +29,7 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), Box<dyn Error + Send
     let mut filtered_names = String::new();
     reader.read_line(&mut filtered_names).await?;
 
-    let filtered_names: Vec<String> = filtered_names
-        .trim()
-        .to_string()
+    let filtered_names: Vec<String> = sanitize_string(&filtered_names)
         .split(',')
         .map(|x| x.to_ascii_lowercase().trim().to_string())
         .filter(|x| x != "")
@@ -39,7 +37,7 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), Box<dyn Error + Send
 
     let mut num_replays = String::new();
     reader.read_line(&mut num_replays).await?;
-    let num_replays: usize = num_replays.trim().parse()?;
+    let num_replays: usize = sanitize_string(&num_replays).parse()?;
 
     let mut replay_strings = Vec::new();
 
@@ -61,6 +59,7 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), Box<dyn Error + Send
         }
     };
 
+    stream.shutdown().await?;
     Ok(())
 }
 
