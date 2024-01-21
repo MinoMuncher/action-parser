@@ -47,99 +47,13 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), Box<dyn Error + Send
         replay_strings.push(replay);
     }
 
-    match process_replays(&replay_strings, &filtered_names).await {
-        Ok(output) => {
-            stream.write_all(output.as_bytes()).await?;
-            stream.flush().await?;
-        }
-        Err(e) => {
-            stream.write_all("error processing replay".as_bytes()).await?;
-            stream.flush().await?;
-            eprintln!("ERROR PROCESSING REPLAY {e}");
-        }
-    };
-
-    stream.shutdown().await?;
-    Ok(())
-}
-
-async fn process_replays(
-    replays: &[String],
-    filtered: &[String],
-) -> Result<String, Box<dyn Error + Send + Sync>> {
     let mut player_stats: HashMap<String, CumulativePlacementStats> = HashMap::new();
 
-    for replay in replays {
-        let addr: usize = std::env::var("TETRIO_PARSER_PORT").ok().and_then(|s: String| s.parse().ok()).unwrap_or(8080);
-        let addr = format!("127.0.0.1:{}",addr).parse()?;
-
-        let socket = TcpSocket::new_v4()?;
-        let stream = socket.connect(addr).await?;
-        let mut stream = BufReader::new(stream);
-        stream.write_all(sanitize_string(&replay).as_bytes()).await?;
-        stream.write_all("\n".as_bytes()).await?;
-        stream.flush().await?;
-
-        let mut supported = String::new();
-        stream.read_line(&mut supported).await?;
-        let supported: bool = sanitize_string(&supported).parse()?;
-
-        if !supported{
-            return Ok("unsupported replay version".to_string());
-        }
-
-        let mut names = String::new();
-        stream.read_line(&mut names).await?;
-        let names: Vec<_> = sanitize_string(&names)
-            .split(' ')
-            .map(|s| s.to_string())
-            .collect();
-
-        let names = if filtered.len() == 0 {
-            names
-        } else {
-            names
-                .into_iter()
-                .filter(|x| filtered.contains(&x.to_lowercase()))
-                .collect()
-        };
-
-        let mut num_games = String::new();
-        stream.read_line(&mut num_games).await?;
-        let num_games: usize = sanitize_string(&num_games).parse()?;
-
-        stream.write_all(names.len().to_string().as_bytes()).await?;
-        stream.write_all("\n".as_bytes()).await?;
-        stream.flush().await?;
-
-        for name in names {
-            let mut cumulative_stats = CumulativePlacementStats::default();
-            let mut handles = JoinSet::new();
-
-            stream.write_all(name.as_bytes()).await?; //request stats for [name] from parser
-            stream.write_all("\n".as_bytes()).await?;
-            stream.flush().await?;
-
-            for _ in 0..num_games {
-                let mut game = String::new();
-                stream.read_line(&mut game).await?; //parse individual placement sequences for each game
-                let placements: Vec<PlacementStats> = serde_json::from_str(&game)?;
-                handles
-                    .spawn_blocking(move || CumulativePlacementStats::from(placements.as_slice()));
-            }
-            while let Some(handle) = handles.join_next().await {
-                let game_stats = handle?;
-                cumulative_stats.absorb(game_stats);
-            }
-
-            match player_stats.entry(name.to_string()) {
-                std::collections::hash_map::Entry::Occupied(mut entry) => {
-                    entry.get_mut().absorb(cumulative_stats);
-                }
-                std::collections::hash_map::Entry::Vacant(entry) => {
-                    entry.insert(cumulative_stats);
-                }
-            }
+    for replay in replay_strings {
+        if let Err(e) = process_replay(&replay, &filtered_names, &mut player_stats).await{
+            stream.write_all(format!("{e}\n").as_bytes()).await?;
+        }else{
+            stream.write_all(format!("success\n").as_bytes()).await?;
         }
     }
 
@@ -148,8 +62,120 @@ async fn process_replays(
         .map(|(username, stats)| (username, PlayerStats::from(&stats)))
         .collect();
 
-    let output = serde_json::to_string(&player_stats)?;
-    Ok(output)
+    let mut output = serde_json::to_string(&player_stats)?;
+    output.push_str("\n");
+
+    stream.write_all(output.as_bytes()).await?;
+
+    stream.shutdown().await?;
+    Ok(())
+}
+
+#[derive(Debug)]
+enum ReplayError{
+    Unsupported,
+    Unparsable,
+    Unmunchable,
+    Corrupt,
+    Connection
+}
+
+impl Error for ReplayError {}
+
+impl std::fmt::Display for ReplayError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self{
+            ReplayError::Unsupported => write!(f, "The replay's version is unsupported."),
+            ReplayError::Unparsable => write!(f, "The replay was unable to be identified as a valid replay."),
+            ReplayError::Unmunchable => write!(f, "The replay's data was unable to be processed into stats."),
+            ReplayError::Corrupt => write!(f, "The replay is corrupt, no data was able to be processed."),
+            ReplayError::Connection => write!(f, "A connection error occurred with the replay parser."),
+        }
+    }
+}
+
+async fn process_replay(replay: &str, filtered: &[String], player_stats: &mut HashMap<String, CumulativePlacementStats>)->Result<(), ReplayError>{
+    let addr: usize = std::env::var("TETRIO_PARSER_PORT").ok().and_then(|s: String| s.parse().ok()).unwrap_or(8080);
+    let addr = format!("127.0.0.1:{}",addr).parse().or(Err(ReplayError::Connection))?;
+
+    let socket = TcpSocket::new_v4().or(Err(ReplayError::Connection))?;
+    let stream = socket.connect(addr).await.or(Err(ReplayError::Connection))?;
+    let mut stream = BufReader::new(stream);
+    stream.write_all(sanitize_string(&replay).as_bytes()).await.or(Err(ReplayError::Connection))?;
+    stream.write_all("\n".as_bytes()).await.or(Err(ReplayError::Connection))?;
+    stream.flush().await.or(Err(ReplayError::Connection))?;
+
+    let mut supported = String::new();
+    stream.read_line(&mut supported).await.or(Err(ReplayError::Unparsable))?;
+    let supported: bool = sanitize_string(&supported).parse().or(Err(ReplayError::Unparsable))?;
+
+    if !supported{
+        return Err(ReplayError::Unsupported)
+    }
+
+    let mut names = String::new();
+    stream.read_line(&mut names).await.or(Err(ReplayError::Unparsable))?;
+    let names: Vec<_> = sanitize_string(&names)
+        .split(' ')
+        .map(|s| s.to_string())
+        .collect();
+
+    let names = if filtered.len() == 0 {
+        names
+    } else {
+        names
+            .into_iter()
+            .filter(|x| filtered.contains(&x.to_lowercase()))
+            .collect()
+    };
+
+    let mut num_games = String::new();
+    stream.read_line(&mut num_games).await.or(Err(ReplayError::Unparsable))?;
+    let num_games: usize = sanitize_string(&num_games).parse().or(Err(ReplayError::Unparsable))?;
+
+    stream.write_all(names.len().to_string().as_bytes()).await.or(Err(ReplayError::Connection))?;
+    stream.write_all("\n".as_bytes()).await.or(Err(ReplayError::Connection))?;
+    stream.flush().await.or(Err(ReplayError::Connection))?;
+
+    let mut fully_corrupt = true;
+
+    for name in names {
+        let mut cumulative_stats = CumulativePlacementStats::default();
+        let mut handles = JoinSet::new();
+
+        stream.write_all(name.as_bytes()).await.or(Err(ReplayError::Connection))?; //request stats for [name] from parser
+        stream.write_all("\n".as_bytes()).await.or(Err(ReplayError::Connection))?;
+        stream.flush().await.or(Err(ReplayError::Connection))?;
+
+        for _ in 0..num_games {
+            let mut game = String::new();
+            stream.read_line(&mut game).await.or(Err(ReplayError::Unparsable))?; //parse individual placement sequences for each game
+            if sanitize_string(&game)=="CORRUPT"{
+                continue;
+            }
+            fully_corrupt = false;
+            let placements: Vec<PlacementStats> = serde_json::from_str(&game).or(Err(ReplayError::Unmunchable))?;
+            handles
+                .spawn_blocking(move || CumulativePlacementStats::from(placements.as_slice()));
+        }
+        while let Some(handle) = handles.join_next().await {
+            let game_stats = handle.or(Err(ReplayError::Unmunchable))?;
+            cumulative_stats.absorb(game_stats);
+        }
+
+        match player_stats.entry(name.to_string()) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().absorb(cumulative_stats);
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(cumulative_stats);
+            }
+        }
+    }
+    if fully_corrupt{
+        return Err(ReplayError::Corrupt);
+    }
+    Ok(())
 }
 
 #[tokio::main]
