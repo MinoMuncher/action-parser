@@ -18,13 +18,13 @@ fn main() {
 
     let mut file_data: HashMap<PathBuf, Vec<(String, CumulativePlacementStats)>> = HashMap::new();
     
-    for entry in std::fs::read_dir(&path).expect("able to read output path"){
+    for entry in std::fs::read_dir(path).expect("able to read output path"){
         let path = entry.expect("file entry error").path();
         if path.extension().and_then(|ext|ext.to_str()).is_some_and(|ext|ext == "ttrm" || ext == "ttr"){
             parse_file(path, &mut file_data);
         }
     }
-    output_data(&out_path, &file_data);
+    output_data(out_path, &file_data);
 
     let (tx, rx) = std::sync::mpsc::channel();
 
@@ -40,7 +40,7 @@ fn main() {
             path.extension().and_then(|ext|ext.to_str()).is_some_and(|ext|ext == "ttrm" || ext == "ttr")
         }).collect();
 
-        if paths.len() == 0 {continue;}
+        if paths.is_empty() {continue;}
 
         for path in paths{
             println!("processing path {:?}", path);
@@ -128,7 +128,7 @@ impl std::fmt::Display for ReplayError {
 
 
 fn sanitize_string(s: &str)->String{
-    s.trim_start_matches("\u{feff}").trim_end_matches('\n').trim_end_matches('\r').to_string()
+    s.trim_start_matches('\u{feff}').trim_end_matches('\n').trim_end_matches('\r').to_string()
 }
 
 
@@ -139,7 +139,7 @@ fn process_replay(replay: &str)->Result<Vec<(String, CumulativePlacementStats)>,
     let stream = TcpStream::connect(addr).or(Err(ReplayError::Connection))?;
     let mut reader = BufReader::new(stream.try_clone().or(Err(ReplayError::Connection))?);
     let mut writer = BufWriter::new(stream);
-    writer.write_all(sanitize_string(&replay).as_bytes()).or(Err(ReplayError::Connection))?;
+    writer.write_all(sanitize_string(replay).as_bytes()).or(Err(ReplayError::Connection))?;
     writer.write_all("\n".as_bytes()).or(Err(ReplayError::Connection))?;
     writer.flush().or(Err(ReplayError::Connection))?;
 

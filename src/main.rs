@@ -18,7 +18,7 @@ use tokio::{
 
 ///removes wrapper characters around tcp streams
 fn sanitize_string(s: &str) -> String {
-    s.trim_start_matches("\u{feff}")
+    s.trim_start_matches('\u{feff}')
         .trim_end_matches('\n')
         .trim_end_matches('\r')
         .to_string()
@@ -34,7 +34,7 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), Box<dyn Error + Send
     let filtered_names: Vec<String> = sanitize_string(&filtered_names)
         .split(',')
         .map(|x| x.to_ascii_lowercase().trim().to_string())
-        .filter(|x| x != "")
+        .filter(|x| !x.is_empty())
         .collect();
     //map names to lowercase, so that name searching is case insensitive
 
@@ -59,7 +59,7 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), Box<dyn Error + Send
         if let Err(e) = process_replay(&replay, &filtered_names, &mut player_stats).await {
             stream.write_all(format!("{e}\n").as_bytes()).await?;
         } else {
-            stream.write_all(format!("success\n").as_bytes()).await?;
+            stream.write_all("success\n".to_string().as_bytes()).await?;
         }
     }
     //process each replay, output results to client
@@ -71,7 +71,7 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), Box<dyn Error + Send
     //transform player stats
 
     let mut output = serde_json::to_string(&player_stats)?;
-    output.push_str("\n");
+    output.push('\n');
 
     stream.write_all(output.as_bytes()).await?;
     //write player stats
@@ -136,7 +136,7 @@ async fn process_replay(
         .or(Err(ReplayError::Connection))?;
     let mut stream = BufReader::new(stream);
     stream
-        .write_all(sanitize_string(&replay).as_bytes())
+        .write_all(sanitize_string(replay).as_bytes())
         .await
         .or(Err(ReplayError::Connection))?;
     stream
@@ -171,7 +171,7 @@ async fn process_replay(
         .collect();
     //get names in replay
 
-    let names = if filtered.len() == 0 {
+    let names = if filtered.is_empty() {
         names
     } else {
         names

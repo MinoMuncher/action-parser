@@ -65,10 +65,8 @@ pub fn has_cheese(board: &Board) -> bool {
         }
         last_garbage_col = new_col;
     }
-    if count > 0 {
-        if count < 4 {
-            return true;
-        }
+    if count > 0 && count < 4 {
+        return true;
     }
     false
 }

@@ -76,7 +76,7 @@ impl CumulativePlacementStats {
     ///combine stats with a reference and cloning
     #[allow(dead_code)]
     pub fn absorb_ref(&mut self, stats: &CumulativePlacementStats) {
-        self.add_stats(&stats);
+        self.add_stats(stats);
 
         self.delays.extend(stats.delays.clone());
         self.stack_heights.extend(stats.stack_heights.clone());
@@ -168,7 +168,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                         placement.clear_type.is_multipliable(),
                         placement.frame_delay,
                         if i > 0 {
-                            game.get(i - 1).and_then(|p| Some(p.frame_delay))
+                            game.get(i - 1).map(|p| p.frame_delay)
                         } else {
                             None
                         },
@@ -180,16 +180,14 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                         Some(current_combo)
                     }
                 }
-            } else {
-                if let Some(combo) = current_combo {
-                    if combo.attack >= 9 {
-                        stats.pre_spike_boards =
-                            stats.pre_spike_boards.saturating_sub(combo.blocks);
-                        spike_grace_period += 14; //if we just did a spike, we have 14 blocks of a grace period before we start penalizing not having a spike
-                    }
-                    stats.combo_segments.push(combo);
-                    current_combo = None;
+            } else if let Some(combo) = current_combo {
+                if combo.attack >= 9 {
+                    stats.pre_spike_boards =
+                        stats.pre_spike_boards.saturating_sub(combo.blocks);
+                    spike_grace_period += 14; //if we just did a spike, we have 14 blocks of a grace period before we start penalizing not having a spike
                 }
+                stats.combo_segments.push(combo);
+                current_combo = None;
             }
 
             if placement.lines_cleared > 0 && !placement.clear_type.is_btb_clear() {
@@ -216,12 +214,10 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
 
                         if placement.clear_type.is_btb_clear() {
                             current_btb.btb += 1;
-                        } else {
-                            if placement.shape == MinoType::I {
-                                current_btb.wasted_i += 1;
-                            } else if placement.shape == MinoType::T {
-                                current_btb.wasted_t += 1;
-                            }
+                        } else if placement.shape == MinoType::I {
+                            current_btb.wasted_i += 1;
+                        } else if placement.shape == MinoType::T {
+                            current_btb.wasted_t += 1;
                         }
 
                         if placement.shape == MinoType::I {

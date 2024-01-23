@@ -162,5 +162,5 @@ fn btb_level(btb: usize) -> usize {
     if btb < 1370 {
         return 7;
     }
-    return 8; // next "level" starts at ~3725 but we're keeping it oskreveal
+    8// next "level" starts at ~3725 but we're keeping it oskreveal
 }
