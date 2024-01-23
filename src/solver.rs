@@ -1,9 +1,10 @@
-use std::{collections::VecDeque, fmt::Display};
 use crate::replay_response::{Board, MinoType};
+use std::{collections::VecDeque, fmt::Display};
 
 use crate::attack::get_indexed_attack;
 use bitris::prelude::*;
 
+///parse replay response types into a bitris node and queue
 fn parse_replay_args(
     board: &Board,
     btb: usize,
@@ -13,7 +14,7 @@ fn parse_replay_args(
     let mut board64 = Board64::blank();
     for y in 0..40 {
         for x in 0..10 {
-            if board[(39-y) * 10 + x] != MinoType::Empty {
+            if board[(39 - y) * 10 + x] != MinoType::Empty {
                 board64.set_at(Location {
                     x: x as i32,
                     y: y as i32,
@@ -22,7 +23,7 @@ fn parse_replay_args(
         }
     }
     let mut vec_queue = VecDeque::new();
-    for &p in queue.into_iter().take(8){
+    for &p in queue.into_iter().take(8) {
         use Shape::*;
         vec_queue.push_back(match p {
             MinoType::Z => Z,
@@ -43,25 +44,16 @@ fn parse_replay_args(
         combo,
         attack: 0,
     };
-    (
-        node,
-        vec_queue,
-    )
+    (node, vec_queue)
 }
 
-
-pub fn solve_state(
-    board: &Board,
-    btb: usize,
-    combo: usize,
-    queue: &[MinoType],
-)-> (usize, usize){
+///dfs to get atk and def
+pub fn solve_state(board: &Board, btb: usize, combo: usize, queue: &[MinoType]) -> (usize, usize) {
     let (node, mut queue) = parse_replay_args(board, btb, combo, queue);
     dfs(node, &mut queue)
 }
 
-
-
+//we do tspin check with immobile, hopefully it is sufficient
 fn is_immobile(board: &Board64, placement: &BlPlacement) -> bool {
     let north = placement + Offset { dx: 0, dy: 1 };
     if north.is_in_free_space(board) {
@@ -95,9 +87,12 @@ struct Node {
     attack: usize,
 }
 
-impl Display for Node{
+impl Display for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{} hold {} btb {} combo {} attack {}" ,self.board, self.hold, self.btb, self.combo, self.attack))?;
+        f.write_fmt(format_args!(
+            "{} hold {} btb {} combo {} attack {}",
+            self.board, self.hold, self.btb, self.combo, self.attack
+        ))?;
         Ok(())
     }
 }
@@ -106,7 +101,7 @@ impl Node {
     fn get_fall_height(&self, shape: Shape) -> usize {
         let mut defence = 0;
         let mut spawn = Piece::new(shape, Orientation::North)
-            .with(cc(4, 21 ))
+            .with(cc(4, 21))
             .to_bl_placement();
         while spawn.is_in_free_space(&self.board) {
             defence += 1;
@@ -116,7 +111,7 @@ impl Node {
     }
     fn get_children(&self, shape: Shape, next_hold: Shape) -> Vec<Self> {
         let spawn = Piece::new(shape, Orientation::North)
-            .with(cc(4, 21 ))
+            .with(cc(4, 21))
             .to_bl_placement();
         if !spawn.is_in_free_space(&self.board) {
             return Vec::new();
@@ -130,7 +125,10 @@ impl Node {
             .into_iter()
             .filter_map(|placement| {
                 let mut new_node = self.clone();
-                let lines_cleared = placement.place_on_and_clear_lines(&mut new_node.board).unwrap_or(Lines::blank()).count();
+                let lines_cleared = placement
+                    .place_on_and_clear_lines(&mut new_node.board)
+                    .unwrap_or(Lines::blank())
+                    .count();
                 if lines_cleared > 0 {
                     let mut clear_type = lines_cleared as usize;
                     let mut is_btb = false;
@@ -171,17 +169,18 @@ impl Node {
 }
 
 fn dfs(node: Node, queue: &mut VecDeque<Shape>) -> (usize, usize) {
-
     if queue.len() == 0 {
-        return (node.attack, node.attack + node.get_fall_height(Shape::I) + 1);
+        return (
+            node.attack,
+            node.attack + node.get_fall_height(Shape::I) + 1,
+        );
     }
     let use_shape = queue.pop_front().unwrap();
 
     let mut max_attack = 0;
     let mut max_def = 0;
 
-
-    let children : Vec<_>= node.get_children(use_shape, node.hold);
+    let children: Vec<_> = node.get_children(use_shape, node.hold);
     if children.len() == 0 {
         max_attack = max_attack.max(node.attack);
         let height = node.get_fall_height(queue.front().unwrap_or(&node.hold).clone());
@@ -195,12 +194,11 @@ fn dfs(node: Node, queue: &mut VecDeque<Shape>) -> (usize, usize) {
     }
 
     if use_shape != node.hold {
-        let children : Vec<_> = node.get_children(node.hold, use_shape);
+        let children: Vec<_> = node.get_children(node.hold, use_shape);
         if children.len() == 0 {
             max_attack = max_attack.max(node.attack);
             let height = node.get_fall_height(queue.front().unwrap_or(&node.hold).clone());
             max_def = max_def.max(node.attack + height + 1);
-
         } else {
             for child in children {
                 let (atk, def) = dfs(child, queue);

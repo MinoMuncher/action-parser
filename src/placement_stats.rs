@@ -3,7 +3,7 @@ use serde::Serialize;
 use crate::board_analyzer::{get_garbage_height, get_height, get_well, has_cheese};
 use crate::replay_response::{ClearType, MinoType, PlacementStats};
 use crate::solver::solve_state;
-
+///stats that represents the sum total of the data from several sequences of placements
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct CumulativePlacementStats {
     pub clear_types: [usize; 16],
@@ -60,6 +60,7 @@ impl CumulativePlacementStats {
         self.spikable_boards += stats.spikable_boards;
         self.pre_spike_boards += stats.pre_spike_boards;
     }
+    ///combine stats while consuming the other
     pub fn absorb(&mut self, stats: CumulativePlacementStats) {
         self.add_stats(&stats);
 
@@ -72,6 +73,7 @@ impl CumulativePlacementStats {
         self.spikable_boards += stats.spikable_boards;
         self.pre_spike_boards += stats.pre_spike_boards;
     }
+    ///combine stats with a reference and cloning
     #[allow(dead_code)]
     pub fn absorb_ref(&mut self, stats: &CumulativePlacementStats) {
         self.add_stats(&stats);
@@ -82,7 +84,8 @@ impl CumulativePlacementStats {
         self.btb_segments.extend(stats.btb_segments.clone());
         self.combo_segments.extend(stats.combo_segments.clone());
 
-        self.defense_potentials.extend(stats.defense_potentials.clone());
+        self.defense_potentials
+            .extend(stats.defense_potentials.clone());
         self.blockfish_scores.extend(stats.blockfish_scores.clone());
     }
 }
@@ -110,6 +113,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                     || (placement.shape != MinoType::T && placement.lines_cleared < 4))
             {
                 opener_over = true;
+                //log opener over if we skim clear a garbage line
             }
 
             stats.shape_types[placement.shape as usize] += 1;
@@ -120,6 +124,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
             } else {
                 stats.clear_types[placement.clear_type as usize] += 1;
             }
+            //override clear type if it is a PC
 
             stats.garbage_cleared += placement.garbage_cleared;
             stats.lines_cleared += placement.lines_cleared;
@@ -180,7 +185,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                     if combo.attack >= 9 {
                         stats.pre_spike_boards =
                             stats.pre_spike_boards.saturating_sub(combo.blocks);
-                        spike_grace_period += 14;
+                        spike_grace_period += 14; //if we just did a spike, we have 14 blocks of a grace period before we start penalizing not having a spike
                     }
                     stats.combo_segments.push(combo);
                     current_combo = None;
@@ -248,6 +253,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
             );
 
             if atk >= 9 {
+                //spikable board limit is around 2btb clears
                 stats.spikable_boards += 1;
             } else {
                 let mut bf_queue: Vec<_> = placement
