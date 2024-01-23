@@ -14,3 +14,9 @@ bitris = {path = "../bitris"}
 blockfish = {path = "../blockfish/blockfish-engine"}
 
 serde_json = "1.0.110"
+
+[[example]]
+name = "auto_muncher"
+
+[dev-dependencies]
+notify = "6.1.1"

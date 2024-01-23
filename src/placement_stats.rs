@@ -1,8 +1,10 @@
+use serde::Serialize;
+
 use crate::board_analyzer::{get_garbage_height, get_height, get_well, has_cheese};
 use crate::replay_response::{ClearType, MinoType, PlacementStats};
 use crate::solver::solve_state;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct CumulativePlacementStats {
     pub clear_types: [usize; 16],
     pub shape_types: [usize; 9],
@@ -31,7 +33,7 @@ pub struct CumulativePlacementStats {
 }
 
 impl CumulativePlacementStats {
-    pub fn absorb(&mut self, stats: CumulativePlacementStats) {
+    fn add_stats(&mut self, stats: &CumulativePlacementStats) {
         self.clear_types
             .iter_mut()
             .zip(stats.clear_types.iter())
@@ -50,21 +52,38 @@ impl CumulativePlacementStats {
         self.attack_with_cheese += stats.attack_with_cheese;
         self.exclusive_cheese_cleared += stats.exclusive_cheese_cleared;
 
+        self.keypresses += stats.keypresses;
+        self.opener_attack += stats.opener_attack;
+        self.opener_frames += stats.opener_frames;
+        self.opener_blocks += stats.opener_blocks;
+
+        self.spikable_boards += stats.spikable_boards;
+        self.pre_spike_boards += stats.pre_spike_boards;
+    }
+    pub fn absorb(&mut self, stats: CumulativePlacementStats) {
+        self.add_stats(&stats);
+
         self.delays.extend(stats.delays);
         self.stack_heights.extend(stats.stack_heights);
         self.garbage_heights.extend(stats.garbage_heights);
         self.btb_segments.extend(stats.btb_segments);
         self.combo_segments.extend(stats.combo_segments);
 
-        self.keypresses += stats.keypresses;
-        self.opener_attack += stats.opener_attack;
-        self.opener_frames += stats.opener_frames;
-        self.opener_blocks += stats.opener_blocks;
-
-        self.defense_potentials.extend(stats.defense_potentials);
-        self.blockfish_scores.extend(stats.blockfish_scores);
         self.spikable_boards += stats.spikable_boards;
         self.pre_spike_boards += stats.pre_spike_boards;
+    }
+    #[allow(dead_code)]
+    pub fn absorb_ref(&mut self, stats: &CumulativePlacementStats) {
+        self.add_stats(&stats);
+
+        self.delays.extend(stats.delays.clone());
+        self.stack_heights.extend(stats.stack_heights.clone());
+        self.garbage_heights.extend(stats.garbage_heights.clone());
+        self.btb_segments.extend(stats.btb_segments.clone());
+        self.combo_segments.extend(stats.combo_segments.clone());
+
+        self.defense_potentials.extend(stats.defense_potentials.clone());
+        self.blockfish_scores.extend(stats.blockfish_scores.clone());
     }
 }
 
@@ -275,7 +294,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
         stats
     }
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize)]
 
 pub struct BTBSegment {
     pub frames: f64,
@@ -313,8 +332,7 @@ impl BTBSegment {
     }
 }
 
-#[derive(Debug, Default)]
-
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct ComboSegment {
     pub frames: f64,
     pub attack: usize,
