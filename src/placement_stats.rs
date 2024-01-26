@@ -70,8 +70,8 @@ impl CumulativePlacementStats {
         self.btb_segments.extend(stats.btb_segments);
         self.combo_segments.extend(stats.combo_segments);
 
-        self.spikable_boards += stats.spikable_boards;
-        self.pre_spike_boards += stats.pre_spike_boards;
+        self.defense_potentials.extend(stats.defense_potentials);
+        self.blockfish_scores.extend(stats.blockfish_scores);
     }
     ///combine stats with a reference and cloning
     #[allow(dead_code)]
