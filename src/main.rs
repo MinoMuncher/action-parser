@@ -4,10 +4,13 @@ mod placement_stats;
 mod player_stats;
 mod replay_response;
 mod solver;
+mod cache;
+mod io;
 
 use placement_stats::CumulativePlacementStats;
 use player_stats::PlayerStats;
 use replay_response::PlacementStats;
+use std::sync::Arc;
 use std::{collections::HashMap, error::Error};
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpSocket, TcpStream};
@@ -15,6 +18,8 @@ use tokio::{
     io::{AsyncBufReadExt, BufReader},
     task::JoinSet,
 };
+use cache::{initialize_cache, get_cached_stats, set_cached_stats};
+use io::{download_replay, io_auth};
 
 ///removes wrapper characters around tcp streams
 fn sanitize_string(s: &str) -> String {
@@ -25,44 +30,128 @@ fn sanitize_string(s: &str) -> String {
 }
 
 ///handling the client
-async fn handle_client(mut stream: TcpStream) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut reader = BufReader::new(&mut stream);
+async fn handle_client(stream: TcpStream, opts: Arc<RunOpts>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut stream = BufReader::new(stream);
     let mut filtered_names = String::new();
-    reader.read_line(&mut filtered_names).await?;
+    stream.read_line(&mut filtered_names).await?;
     //list of names to request from replay, empty list means take all available names from replay
 
     let filtered_names: Vec<String> = sanitize_string(&filtered_names)
         .split(',')
         .map(|x| x.to_ascii_lowercase().trim().to_string())
-        .filter(|x| !x.is_empty())
+        .filter(|x| !x.is_empty())//sanity check to remove double comma case
         .collect();
     //map names to lowercase, so that name searching is case insensitive
-
-    let mut num_replays = String::new();
-    reader.read_line(&mut num_replays).await?;
-    let num_replays: usize = sanitize_string(&num_replays).parse()?;
-    //get number of replays to be loaded
-
-    let mut replay_strings = Vec::new();
-
-    for _ in 0..num_replays {
-        let mut replay = String::new();
-        reader.read_line(&mut replay).await?;
-        replay_strings.push(replay);
-    }
-    //load replays
 
     let mut player_stats: HashMap<String, CumulativePlacementStats> = HashMap::new();
     //we keep a map of players' cumulative placemenet stats, then transform to advanced stats after
 
-    for replay in replay_strings {
-        if let Err(e) = process_replay(&replay, &filtered_names, &mut player_stats).await {
-            stream.write_all(format!("{e}\n").as_bytes()).await?;
+
+    let mut num_replay_ids = String::new();
+    stream.read_line(&mut num_replay_ids).await?;
+    let num_replay_ids: usize = sanitize_string(&num_replay_ids).parse()?;
+    //get number of replays to be loaded
+
+    for _ in 0..num_replay_ids {
+        let mut replay_id = String::new();
+        stream.read_line(&mut replay_id).await?;
+
+        let cached_stats = if opts.caching_enabled{
+            let cached_stats = get_cached_stats(&replay_id);
+            let cached_stats = match cached_stats{
+                None=>{Some(HashMap::new())},
+                Some(stats)=>{
+                    if (filtered_names.len()==0 && stats.len() == 2) || filtered_names.iter().all(|name| stats.keys().any(|cached_name|&cached_name.to_lowercase()==name)){
+                        for (name, cumulative_stats) in stats{
+                            if filtered_names.len() > 0 && !filtered_names.contains(&name.to_lowercase()){continue;}
+                            match player_stats.entry(name) {
+                                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                                    entry.get_mut().absorb(cumulative_stats);
+                                }
+                                std::collections::hash_map::Entry::Vacant(entry) => {
+                                    entry.insert(cumulative_stats);
+                                }
+                            }
+                        }
+                        write_line(&mut stream, "success").await?;
+                        continue;
+                    }
+                    Some(stats)
+                }
+            };
+            cached_stats
+        }else{
+            None
+        };
+
+        let replay = download_replay(&replay_id, &opts.token).await;
+        let replay = match replay{
+            Ok(replay) => replay,
+            Err(e) => {
+                eprintln!("ERROR DOWNLOADING REPLAY: {}", e);
+                write_line(&mut stream, "error downloading replay").await?;
+                continue;
+            },
+        };
+    
+        if let Err(e) = process_replay(&replay, &filtered_names, &mut player_stats, &replay_id, cached_stats).await {
+            write_line(&mut stream, &format!("{e}")).await?;
         } else {
-            stream.write_all("success\n".to_string().as_bytes()).await?;
+            write_line(&mut stream, "success").await?;
         }
     }
-    //process each replay, output results to client
+
+    let mut num_replays = String::new();
+    stream.read_line(&mut num_replays).await?;
+    let num_replays: usize = sanitize_string(&num_replays).parse()?;
+    //get number of replays to be loaded
+
+    for _ in 0..num_replays {
+        let mut hash = String::new();
+        stream.read_line(&mut hash).await?;
+
+
+        let cached_stats = if opts.caching_enabled{
+            let cached_stats = get_cached_stats(&hash);
+            let cached_stats = match cached_stats{
+                None=>{
+                    Some(HashMap::new())
+                },
+                Some(stats)=>{
+                    if (filtered_names.len()==0 && stats.len() == 2) || filtered_names.iter().all(|name| stats.keys().any(|cached_name|&cached_name.to_lowercase()==name)){
+                        for (name, cumulative_stats) in stats{
+                            if filtered_names.len() > 0 && !filtered_names.contains(&name.to_lowercase()){continue;}
+                            match player_stats.entry(name) {
+                                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                                    entry.get_mut().absorb(cumulative_stats);
+                                }
+                                std::collections::hash_map::Entry::Vacant(entry) => {
+                                    entry.insert(cumulative_stats);
+                                }
+                            }
+                        }
+                        write_line(&mut stream, "true").await?;
+                        continue;
+                    }
+                    Some(stats)
+                }
+            };
+            write_line(&mut stream, "false").await?;
+            cached_stats
+        }else{
+            write_line(&mut stream, "false").await?;
+            None
+        };
+
+        let mut replay = String::new();
+        stream.read_line(&mut replay).await?;
+
+        if let Err(e) = process_replay(&replay, &filtered_names, &mut player_stats, &hash, cached_stats).await {
+            write_line(&mut stream, &format!("{e}")).await?;
+        } else {
+            write_line(&mut stream, "success").await?;
+        }
+    }
 
     let player_stats: HashMap<_, _> = player_stats
         .into_iter()
@@ -70,12 +159,9 @@ async fn handle_client(mut stream: TcpStream) -> Result<(), Box<dyn Error + Send
         .collect();
     //transform player stats
 
-    let mut output = serde_json::to_string(&player_stats)?;
-    output.push('\n');
-
-    stream.write_all(output.as_bytes()).await?;
+    let output = serde_json::to_string(&player_stats)?;
+    write_line(&mut stream, &output).await?;
     //write player stats
-
     stream.shutdown().await?;
     Ok(())
 }
@@ -114,11 +200,24 @@ impl std::fmt::Display for ReplayError {
     }
 }
 
+async fn write_line(stream: &mut BufReader<TcpStream>, line: &str)-> Result<(), ReplayError>{
+    let line_bytes = line.as_bytes();
+    stream.write_all(line_bytes).await.or(Err(ReplayError::Connection))?;
+    stream.write_u8('\n' as u8).await.or(Err(ReplayError::Connection))?;
+    stream.flush().await.or(Err(ReplayError::Connection))?;
+    Ok(())
+}
+
 async fn process_replay(
     replay: &str,
     filtered: &[String],
     player_stats: &mut HashMap<String, CumulativePlacementStats>,
+    cached_handle: &str,
+    mut cached_stats: Option<HashMap<String, CumulativePlacementStats>> //mutable cache to save later
 ) -> Result<(), ReplayError> {
+
+    let mut cached_stats_updated = false;
+
     let addr: usize = std::env::var("TETRIO_PARSER_PORT")
         .ok()
         .and_then(|s: String| s.parse().ok())
@@ -135,15 +234,8 @@ async fn process_replay(
         .await
         .or(Err(ReplayError::Connection))?;
     let mut stream = BufReader::new(stream);
-    stream
-        .write_all(sanitize_string(replay).as_bytes())
-        .await
-        .or(Err(ReplayError::Connection))?;
-    stream
-        .write_all("\n".as_bytes())
-        .await
-        .or(Err(ReplayError::Connection))?;
-    stream.flush().await.or(Err(ReplayError::Connection))?;
+
+    write_line(&mut stream, &sanitize_string(replay)).await?;
     //write replay string
 
     let mut supported = String::new();
@@ -191,15 +283,7 @@ async fn process_replay(
         .or(Err(ReplayError::Unparsable))?;
     //get number of games of replay
 
-    stream
-        .write_all(names.len().to_string().as_bytes())
-        .await
-        .or(Err(ReplayError::Connection))?;
-    stream
-        .write_all("\n".as_bytes())
-        .await
-        .or(Err(ReplayError::Connection))?;
-    stream.flush().await.or(Err(ReplayError::Connection))?;
+    write_line(&mut stream, &names.len().to_string()).await?;
     //write number of names to get stats for
 
     let mut fully_corrupt = true;
@@ -209,15 +293,7 @@ async fn process_replay(
         let mut handles = JoinSet::new();
         //joinset to process stat transformation multithreadedly
 
-        stream
-            .write_all(name.as_bytes())
-            .await
-            .or(Err(ReplayError::Connection))?; //request stats for [name] from parser
-        stream
-            .write_all("\n".as_bytes())
-            .await
-            .or(Err(ReplayError::Connection))?;
-        stream.flush().await.or(Err(ReplayError::Connection))?;
+        write_line(&mut stream, &name).await?;
 
         for _ in 0..num_games {
             let mut game = String::new();
@@ -238,8 +314,16 @@ async fn process_replay(
             let game_stats = handle.or(Err(ReplayError::Unmunchable))?;
             cumulative_stats.absorb(game_stats); //join all handles and their respective stats
         }
+         
+        if let Some(mut stats) = cached_stats{
+            if !stats.contains_key(&name){
+                stats.insert(name.clone(), cumulative_stats.clone()); //how can i avoid this clone?
+                cached_stats_updated = true;
+            }
+            cached_stats = Some(stats);
+        }
 
-        match player_stats.entry(name.to_string()) {
+        match player_stats.entry(name) {
             std::collections::hash_map::Entry::Occupied(mut entry) => {
                 entry.get_mut().absorb(cumulative_stats);
             }
@@ -249,6 +333,12 @@ async fn process_replay(
         }
         //merge stats for respective player
     }
+    if let Some(cached_stats) = cached_stats{
+        if cached_stats_updated{
+            set_cached_stats(cached_handle, &cached_stats);
+        }    
+    }
+
     if fully_corrupt {
         return Err(ReplayError::Corrupt);
     } //no data received? return corrupt
@@ -256,8 +346,27 @@ async fn process_replay(
     Ok(())
 }
 
+struct RunOpts{
+    caching_enabled: bool,
+    token: String
+}
+
 #[tokio::main]
 async fn main() {
+    let caching_enabled : bool = std::env::var("ENABLE_CACHE").ok()
+    .and_then(|s: String| s.parse().ok())
+    .unwrap_or(true);
+    initialize_cache();
+
+    let token = io_auth().await;
+
+    let opts = RunOpts{
+        token,
+        caching_enabled
+    };
+
+    let shared_opts = Arc::new(opts);
+    
     let port: usize = std::env::var("ACTION_PARSER_PORT")
         .ok()
         .and_then(|s: String| s.parse().ok())
@@ -270,8 +379,9 @@ async fn main() {
     loop {
         match listener.accept().await {
             Ok((stream, _)) => {
+                let cloned_opts = Arc::clone(&shared_opts);
                 tokio::spawn(async move {
-                    if let Err(e) = handle_client(stream).await {
+                    if let Err(e) = handle_client(stream, cloned_opts).await {
                         eprintln!("error handling client! {}", e);
                     };
                 });

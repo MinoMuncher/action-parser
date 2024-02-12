@@ -1,10 +1,10 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::board_analyzer::{get_garbage_height, get_height, get_well, has_cheese};
 use crate::replay_response::{ClearType, MinoType, PlacementStats};
 use crate::solver::solve_state;
 ///stats that represents the sum total of the data from several sequences of placements
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct CumulativePlacementStats {
     pub clear_types: [usize; 16],
     pub shape_types: [usize; 9],
@@ -135,7 +135,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
             if !opener_over {
                 stats.opener_blocks += 1;
                 stats.opener_attack += attack;
-                stats.opener_frames += placement.frame_delay;
+                stats.opener_frames += round_delay(placement.frame_delay);
             }
 
             if placement.garbage_cleared > 0 {
@@ -153,7 +153,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                 stats.exclusive_cheese_cleared += placement.lines_cleared;
             }
 
-            stats.delays.push(placement.frame_delay);
+            stats.delays.push(round_delay(placement.frame_delay));
             stats.keypresses += placement.keypresses;
 
             let garbage_height = get_garbage_height(&placement.board);
@@ -166,15 +166,15 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                     None => Some(ComboSegment::new(
                         attack,
                         placement.clear_type.is_multipliable(),
-                        placement.frame_delay,
+                        round_delay(placement.frame_delay),
                         if i > 0 {
-                            game.get(i - 1).map(|p| p.frame_delay)
+                            game.get(i - 1).map(|p| round_delay(p.frame_delay))
                         } else {
                             None
                         },
                     )),
                     Some(mut current_combo) => {
-                        current_combo.frames += placement.frame_delay;
+                        current_combo.frames += round_delay(placement.frame_delay);
                         current_combo.attack += attack;
                         current_combo.blocks += 1;
                         Some(current_combo)
@@ -209,7 +209,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                         }
                     }
                     Some(mut current_btb) => {
-                        current_btb.frames += placement.frame_delay;
+                        current_btb.frames += round_delay(placement.frame_delay);
                         current_btb.attack += attack;
 
                         if placement.clear_type.is_btb_clear() {
@@ -296,7 +296,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
         stats
     }
 }
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 
 pub struct BTBSegment {
     pub frames: f64,
@@ -334,7 +334,7 @@ impl BTBSegment {
     }
 }
 
-#[derive(Debug, Default, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ComboSegment {
     pub frames: f64,
     pub attack: usize,
@@ -377,4 +377,8 @@ fn mino_to_color(mino: MinoType) -> Option<blockfish::Color> {
         MinoType::T => blockfish::Color::try_from('T').ok(),
         _ => None,
     }
+}
+
+fn round_delay(delay: f64) -> f64{
+    (delay * 10.0).round() / 10.0
 }
