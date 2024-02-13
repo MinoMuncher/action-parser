@@ -27,7 +27,7 @@ pub fn get_garbage_height(board: &Board) -> usize {
     0
 }
 
-pub fn get_well(board: &Board) -> usize {
+pub fn get_well(board: &Board) -> (usize, usize) {
     let column_heights: Vec<usize> = (0..10_usize)
         .map(|x| {
             for y in 0..40 {
@@ -38,8 +38,8 @@ pub fn get_well(board: &Board) -> usize {
             0
         })
         .collect();
-    let min_height = column_heights.iter().min().expect("column_heights empty");
-    *min_height
+    let min_height = column_heights.into_iter().enumerate().min_by(|(_, a), (_, b)| a.cmp(b)).expect("column_heights empty");
+    min_height
 }
 ///Checks if the top layer of garbage on the board is cheese or not
 pub fn has_cheese(board: &Board) -> bool {

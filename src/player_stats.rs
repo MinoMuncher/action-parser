@@ -9,6 +9,7 @@ use serde::Serialize;
 #[derive(Serialize, Default, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerStats {
+    pub well_columns: [usize; 10],
     pub clear_types: HashMap<ClearType, usize>,
 
     pub t_efficiency: f64,
@@ -199,6 +200,7 @@ impl From<&CumulativePlacementStats> for PlayerStats {
             attack_chains.iter().filter_map(|c| c.prev_delay).collect();
 
         Self {
+            well_columns: stats.well_cols,
             clear_types,
             t_efficiency: tspins as f64 / stats.shape_types[MinoType::T as usize] as f64,
             i_efficiency: stats.clear_types[ClearType::Quad as usize] as f64

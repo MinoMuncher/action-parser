@@ -6,6 +6,7 @@ use crate::solver::solve_state;
 ///stats that represents the sum total of the data from several sequences of placements
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct CumulativePlacementStats {
+    pub well_cols: [usize; 10],
     pub clear_types: [usize; 16],
     pub shape_types: [usize; 9],
     pub garbage_cleared: usize,
@@ -34,6 +35,10 @@ pub struct CumulativePlacementStats {
 
 impl CumulativePlacementStats {
     fn add_stats(&mut self, stats: &CumulativePlacementStats) {
+        self.well_cols
+            .iter_mut()
+            .zip(stats.well_cols.iter())
+            .for_each(|(c, s)| *c += s);
         self.clear_types
             .iter_mut()
             .zip(stats.clear_types.iter())
@@ -200,8 +205,10 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                     None => {
                         if placement.lines_cleared > 0 {
                             let mut well = None;
-                            if height > 0 {
-                                well = Some(get_well(&placement.board));
+                            let (col, height) = get_well(&placement.board);
+                            if height > 4 {
+                                stats.well_cols[col]+=1;
+                                well = Some(col);
                             }
                             Some(BTBSegment::new(attack, placement.shape, well))
                         } else {
@@ -229,8 +236,10 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                         current_btb.blocks += 1;
 
                         let mut well = None;
-                        if height > 0 {
-                            well = Some(get_well(&placement.board));
+                        let (col, height) = get_well(&placement.board);
+                        if height > 4 {
+                            stats.well_cols[col]+=1;
+                            well = Some(col);
                         }
                         if current_btb.well != well {
                             current_btb.wellshifts += 1;
