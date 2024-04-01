@@ -1,8 +1,10 @@
-use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
 
 use crate::board_analyzer::{get_garbage_height, get_height, get_well, has_cheese};
 use crate::replay_response::{ClearType, MinoType, PlacementStats};
 use crate::solver::solve_state;
+use serde::{Deserialize, Serialize};
+use std::time::UNIX_EPOCH;
 ///stats that represents the sum total of the data from several sequences of placements
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct CumulativePlacementStats {
@@ -101,6 +103,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
             search_limit: 100,
             parameters: blockfish::Parameters::default(),
         };
+
         let mut blockfish = blockfish::ai::AI::new(blockfish_config);
 
         let mut stats = CumulativePlacementStats::default();
@@ -126,10 +129,8 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
 
             if height == 0 {
                 stats.clear_types[ClearType::PerfectClear as usize] += 1;
-            } else {
-                stats.clear_types[placement.clear_type as usize] += 1;
             }
-            //override clear type if it is a PC
+            stats.clear_types[placement.clear_type as usize] += 1;
 
             stats.garbage_cleared += placement.garbage_cleared;
             stats.lines_cleared += placement.lines_cleared;
@@ -187,8 +188,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                 }
             } else if let Some(combo) = current_combo {
                 if combo.attack >= 9 {
-                    stats.pre_spike_boards =
-                        stats.pre_spike_boards.saturating_sub(combo.blocks);
+                    stats.pre_spike_boards = stats.pre_spike_boards.saturating_sub(combo.blocks);
                     spike_grace_period += 14; //if we just did a spike, we have 14 blocks of a grace period before we start penalizing not having a spike
                 }
                 stats.combo_segments.push(combo);
@@ -207,7 +207,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                             let mut well = None;
                             let (col, height) = get_well(&placement.board);
                             if height > 4 {
-                                stats.well_cols[col]+=1;
+                                stats.well_cols[col] += 1;
                                 well = Some(col);
                             }
                             Some(BTBSegment::new(attack, placement.shape, well))
@@ -238,7 +238,7 @@ impl From<&[PlacementStats]> for CumulativePlacementStats {
                         let mut well = None;
                         let (col, height) = get_well(&placement.board);
                         if height > 4 {
-                            stats.well_cols[col]+=1;
+                            stats.well_cols[col] += 1;
                             well = Some(col);
                         }
                         if current_btb.well != well {
@@ -388,6 +388,6 @@ fn mino_to_color(mino: MinoType) -> Option<blockfish::Color> {
     }
 }
 
-fn round_delay(delay: f64) -> f64{
+fn round_delay(delay: f64) -> f64 {
     (delay * 10.0).round() / 10.0
 }
